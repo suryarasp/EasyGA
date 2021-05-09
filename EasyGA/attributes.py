@@ -3,7 +3,7 @@ from inspect import signature
 from typing import Callable, Optional, Iterable, Any, Dict
 from math import sqrt, ceil
 from dataclasses import dataclass, field
-from functools import wraps
+from types import MethodType
 import random
 
 import sqlite3
@@ -252,14 +252,12 @@ def set_method(name: str) -> Callable[[Attributes, Optional[Callable[..., Any]]]
     """
     def setter(self: Attributes, method: Optional[Callable[..., Any]]) -> None:
         if method is None:
-            new_method = method
+            pass
         elif not callable(method):
             raise TypeError(f"{name} must be a method i.e. callable.")
         elif next(iter(signature(method).parameters), None) in ("self", "ga"):
-            new_method = wraps(method)(lambda *args, **kwargs: method(self, *args, **kwargs))
-        else:
-            new_method = method
-        self.properties[name] = new_method
+            method = MethodType(method, self)
+        self.properties[name] = method
     return setter
 
 
