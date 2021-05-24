@@ -86,6 +86,7 @@ class Attributes:
 
     database: Database = field(default_factory=sql_database.SQL_Database)
     database_name: str = 'database.db'
+    save_data: bool = True
     sql_create_data_structure: str = """
         CREATE TABLE IF NOT EXISTS data (
             id INTEGER PRIMARY KEY,
