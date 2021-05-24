@@ -93,7 +93,8 @@ class GA(Attributes):
             self.sort_by_best_fitness()
 
             # Save the population to the database
-            self.save_population()
+            if self.save_data:
+                self.save_population()
 
             # Adapt the ga if the generation times the adapt rate
             # passes through an integer value.
