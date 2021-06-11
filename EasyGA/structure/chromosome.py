@@ -107,6 +107,17 @@ class Chromosome():
         return (to_gene(gene) in self.gene_list)
 
 
+    def __hash__(self):
+        """
+        Returns hash(self).
+        Allows the user to use
+                {chromosome}
+                {chromosome: x}
+        or any other thing requiring hashes with chromosomes.
+        """
+        return hash(tuple(self))
+
+
     def __eq__(self, chromosome):
         """Returns self == chromosome, True if all genes match."""
         return self.gene_list == chromosome.gene_list

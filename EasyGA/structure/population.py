@@ -159,6 +159,17 @@ class Population:
         return (to_chromosome(chromosome) in self.chromosome_list)
 
 
+    def __hash__(self):
+        """
+        Returns hash(self).
+        Allows the user to use
+                {population}
+                {population: x}
+        or any other thing requiring hashes with populations.
+        """
+        return hash(tuple(self))
+
+
     def __eq__(self, population):
         """Returns self == population, True if all chromosomes match."""
         return self.chromosome_list == population.chromosome_list
