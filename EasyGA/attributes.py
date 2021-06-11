@@ -123,8 +123,6 @@ class Attributes:
     Contains default attributes for each attribute.
     """
 
-    properties: Dict[str, Any] = field(default_factory=dict, init=False, repr=False, compare=False)
-
     run: int = 0
 
     chromosome_length: int = 10
@@ -216,9 +214,9 @@ class Attributes:
         self.database.insert_current_chromosome(self.current_generation, chromosome)
 
 
-#==================================================#
-# Properties for attributes behaving like methods. #
-#==================================================#
+#=========================#
+# Properties for methods. #
+#=========================#
 
 
 def get_method(name: str) -> Callable[[Attributes], Callable[..., Any]]:
@@ -236,7 +234,7 @@ def get_method(name: str) -> Callable[[Attributes], Callable[..., Any]]:
         The getter property, taking in an object and returning the method.
     """
     def getter(self: Attributes) -> Callable[..., Any]:
-        return self.properties[name]
+        return getattr(self, f"_{name}")
     return getter
 
 
@@ -261,7 +259,7 @@ def set_method(name: str) -> Callable[[Attributes, Optional[Callable[..., Any]]]
             raise TypeError(f"{name} must be a method i.e. callable.")
         elif next(iter(signature(method).parameters), None) in ("self", "ga"):
             method = MethodType(method, self)
-        self.properties[name] = method
+        setattr(self, f"_{name}", method)
     return setter
 
 
@@ -280,11 +278,16 @@ for name in (
     "chromosome_impl",
     "population_impl",
 ):
+    # Rename to private attribute:
+    # name -> _name
+    setattr(Attributes, f"_{name}", getattr(Attributes, name))
+    # Replace name with property
     setattr(Attributes, name, property(get_method(name), set_method(name)))
 
 
 #============================#
-# Static checking properties #
+# Static checking properties $
+# for non-methods            #
 #============================#
 
 
@@ -323,7 +326,7 @@ def get_attr(name: str) -> Callable[[Attributes], Any]:
         A getter method which returns an attribute.
     """
     def getter(self: Attributes) -> Any:
-        return self.properties[name]
+        return getattr(self, f"_{name}")
     return getter
 
 
@@ -348,7 +351,7 @@ def set_attr(name: str, check: Callable[[Any], bool], error: str) -> Callable[[A
     """
     def setter(self: Attributes, value: Any) -> Any:
         if check(value):
-            self.properties[name] = value
+            setattr(self, f"_{name}", value)
         else:
             raise ValueError(error)
     return setter
