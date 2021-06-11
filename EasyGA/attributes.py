@@ -21,105 +21,9 @@ from crossover import Crossover
 from mutation import Mutation
 from database import sql_database, matplotlib_graph
 
-
-@dataclass
-class Attributes:
-    """
-    Attributes class which stores all attributes in a dataclass.
-    Contains default attributes for each attribute.
-    """
-
-    properties: Dict[str, Any] = field(default_factory=dict, init=False, repr=False, compare=False)
-
-    run: int = 0
-
-    chromosome_length: int = 10
-    population_size: int = 10
-    population: Optional[Population] = None
-
-    target_fitness_type: str = 'max'
-    update_fitness: bool = False
-
-    parent_ratio: float = 0.1
-    selection_probability: float = 0.5
-    tournament_size_ratio: float = 0.1
-
-    current_generation: int = 0
-    generation_goal: int = 100
-    fitness_goal: Optional[float] = None
-    tolerance_goal: Optional[float] = None
-    percent_converged: float = 0.5
-
-    chromosome_mutation_rate: float = 0.15
-    gene_mutation_rate: float = 0.05
-
-    adapt_rate: float = 0.05
-    adapt_probability_rate: float = 0.05
-    adapt_population_flag: bool = True
-
-    max_selection_probability: float = 0.75
-    min_selection_probability: float = 0.25
-    max_chromosome_mutation_rate: float = None
-    min_chromosome_mutation_rate: float = None
-    max_gene_mutation_rate: float = 0.15
-    min_gene_mutation_rate: float = 0.01
-
-    fitness_function_impl: Callable[[Attributes, Chromosome], float] = Fitness.is_it_5
-    make_population: Callable[[Iterable[Iterable[Any]]], Population] = Population
-    make_chromosome: Callable[[Iterable[Any]], Chromosome] = Chromosome
-    make_gene: Callable[[Any], Gene] = Gene
-
-    gene_impl: Callable[[Attributes], Any] = field(default_factory=lambda: rand_1_to_10)
-    chromosome_impl: Optional[[Attributes], Iterable[Any]] = field(default_factory=lambda: use_genes)
-    population_impl: Optional[[Attributes], Iterable[Iterable[Any]]] = field(default_factory=lambda: use_chromosomes)
-
-    weighted_random: Callable[[Attributes, float], float] = field(default_factory=lambda: simple_linear)
-    dist: Callable[[Attributes, Chromosome, Chromosome], float] = field(default_factory=lambda: dist_fitness)
-
-    parent_selection_impl: Callable[[Attributes], None] = Parent.Rank.tournament
-    crossover_individual_impl: Callable[[Attributes], None] = Crossover.Individual.single_point
-    crossover_population_impl: Callable[[Attributes], None] = Crossover.Population.sequential
-    survivor_selection_impl: Callable[[Attributes], None] = Survivor.fill_in_best
-    mutation_individual_impl: Callable[[Attributes], None] = Mutation.Individual.individual_genes
-    mutation_population_impl: Callable[[Attributes], None] = Mutation.Population.random_avoid_best
-    termination_impl: Callable[[Attributes], None] = Termination.fitness_generation_tolerance
-
-    database: Database = field(default_factory=sql_database.SQL_Database)
-    database_name: str = 'database.db'
-    sql_create_data_structure: str = """
-        CREATE TABLE IF NOT EXISTS data (
-            id INTEGER PRIMARY KEY,
-            config_id INTEGER DEFAULT NULL,
-            generation INTEGER NOT NULL,
-            fitness REAL,
-            chromosome TEXT
-        );
-    """
-
-    graph: Callable[[Database], Graph] = matplotlib_graph.Matplotlib_Graph
-
-
-    #============================#
-    # Built-in database methods: #
-    #============================#
-
-
-    def save_population(self: Attributes) -> None:
-        """Saves the current population to the database."""
-        self.database.insert_current_population(self)
-
-
-    def save_chromosome(self: Attributes, chromosome: Chromosome) -> None:
-        """
-        Saves a chromosome to the database.
-
-        Parameters
-        ----------
-        chromosome : Chromosome
-            The chromosome to be saved.
-        """
-        self.database.insert_current_chromosome(self.current_generation, chromosome)
-
+#========================================#
+# Default methods not defined elsewhere. #
+#========================================#
 
 def rand_1_to_10(self: Attributes) -> int:
     """
@@ -210,6 +114,105 @@ def simple_linear(self: Attributes, weight: float) -> float:
         return rand * (1-weight) / weight
     else:
         return 1 - (1-rand) * weight / (1-weight)
+
+
+@dataclass
+class Attributes:
+    """
+    Attributes class which stores all attributes in a dataclass.
+    Contains default attributes for each attribute.
+    """
+
+    properties: Dict[str, Any] = field(default_factory=dict, init=False, repr=False, compare=False)
+
+    run: int = 0
+
+    chromosome_length: int = 10
+    population_size: int = 10
+    population: Optional[Population] = None
+
+    target_fitness_type: str = 'max'
+    update_fitness: bool = False
+
+    parent_ratio: float = 0.1
+    selection_probability: float = 0.5
+    tournament_size_ratio: float = 0.1
+
+    current_generation: int = 0
+    generation_goal: int = 100
+    fitness_goal: Optional[float] = None
+    tolerance_goal: Optional[float] = None
+    percent_converged: float = 0.5
+
+    chromosome_mutation_rate: float = 0.15
+    gene_mutation_rate: float = 0.05
+
+    adapt_rate: float = 0.05
+    adapt_probability_rate: float = 0.05
+    adapt_population_flag: bool = True
+
+    max_selection_probability: float = 0.75
+    min_selection_probability: float = 0.25
+    max_chromosome_mutation_rate: float = None
+    min_chromosome_mutation_rate: float = None
+    max_gene_mutation_rate: float = 0.15
+    min_gene_mutation_rate: float = 0.01
+
+    fitness_function_impl = Fitness.is_it_5
+    make_population = Population
+    make_chromosome = Chromosome
+    make_gene = Gene
+
+    gene_impl = rand_1_to_10
+    chromosome_impl = use_genes
+    population_impl = use_chromosomes
+
+    weighted_random = simple_linear
+    dist = dist_fitness
+
+    parent_selection_impl = Parent.Rank.tournament
+    crossover_individual_impl = Crossover.Individual.single_point
+    crossover_population_impl = Crossover.Population.sequential
+    survivor_selection_impl = Survivor.fill_in_best
+    mutation_individual_impl = Mutation.Individual.individual_genes
+    mutation_population_impl = Mutation.Population.random_avoid_best
+    termination_impl = Termination.fitness_generation_tolerance
+
+    database: Database = field(default_factory=sql_database.SQL_Database)
+    database_name: str = 'database.db'
+    sql_create_data_structure: str = """
+        CREATE TABLE IF NOT EXISTS data (
+            id INTEGER PRIMARY KEY,
+            config_id INTEGER DEFAULT NULL,
+            generation INTEGER NOT NULL,
+            fitness REAL,
+            chromosome TEXT
+        );
+    """
+
+    graph: Callable[[Database], Graph] = matplotlib_graph.Matplotlib_Graph
+
+
+    #============================#
+    # Built-in database methods: #
+    #============================#
+
+
+    def save_population(self: Attributes) -> None:
+        """Saves the current population to the database."""
+        self.database.insert_current_population(self)
+
+
+    def save_chromosome(self: Attributes, chromosome: Chromosome) -> None:
+        """
+        Saves a chromosome to the database.
+
+        Parameters
+        ----------
+        chromosome : Chromosome
+            The chromosome to be saved.
+        """
+        self.database.insert_current_chromosome(self.current_generation, chromosome)
 
 
 #==================================================#
