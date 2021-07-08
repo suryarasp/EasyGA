@@ -205,9 +205,7 @@ class AsMethod:
         return vars(obj)[self.name]
 
     def __set__(self: AsMethod, obj: "AttributesProperties", method: Callable) -> None:
-        if method is None:
-            pass
-        elif not callable(method):
+        if not callable(method):
             raise TypeError(f"{self.name} must be a method i.e. callable.")
         elif next(iter(signature(method).parameters), None) in ("self", "ga"):
             method = MethodType(method, obj)
