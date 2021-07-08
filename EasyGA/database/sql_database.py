@@ -17,7 +17,7 @@ class SQL_Database:
                 config_id INTEGER,
                 attribute_name TEXT,
                 attribute_value TEXT
-            ;)
+            );
         """
 
 
