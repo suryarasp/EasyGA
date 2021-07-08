@@ -1,6 +1,6 @@
 from __future__ import annotations
 from inspect import signature
-from typing import Callable, Optional, Iterable, Any, Dict
+from typing import Any, Callable, Dict, Iterable, Iterator, Optional
 from math import sqrt, ceil
 from dataclasses import dataclass, field
 from types import MethodType
@@ -20,6 +20,7 @@ from survivor import Survivor
 from crossover import Crossover
 from mutation import Mutation
 from database import sql_database, matplotlib_graph
+from database import sql_database as Database, matplotlib_graph as Graph
 
 #========================================#
 # Default methods not defined elsewhere. #
@@ -36,8 +37,7 @@ def rand_1_to_10(self: Attributes) -> int:
     """
     return random.randint(1, 10)
 
-
-def use_genes(self: Attributes) -> Iterable[Any]:
+def use_genes(self: Attributes) -> Iterator[Any]:
     """
     Default chromosome_impl, generates a chromosome using the gene_impl and chromosome length.
 
@@ -50,14 +50,13 @@ def use_genes(self: Attributes) -> Iterable[Any]:
 
     Returns
     -------
-    chromosome : Iterable[Any]
+    chromosome : Iterator[Any]
         Generates the genes for a chromosome.
     """
     for _ in range(self.chromosome_length):
         yield self.gene_impl()
 
-
-def use_chromosomes(self: Attributes) -> Iterable[Any]:
+def use_chromosomes(self: Attributes) -> Iterator[Iterable[Any]]:
     """
     Default population_impl, generates a population using the chromosome_impl and population size.
 
@@ -70,12 +69,11 @@ def use_chromosomes(self: Attributes) -> Iterable[Any]:
 
     Returns
     -------
-    population : Iterable[Iterable[Any]]
+    population : Iterator[Iterable[Any]]
         Generates the chromosomes for a population.
     """
     for _ in range(self.population_size):
         yield self.chromosome_impl()
-
 
 def dist_fitness(self: Attributes, chromosome_1: Chromosome, chromosome_2: Chromosome) -> float:
     """
@@ -92,7 +90,6 @@ def dist_fitness(self: Attributes, chromosome_1: Chromosome, chromosome_2: Chrom
         The distance between the two chromosomes.
     """
     return sqrt(abs(chromosome_1.fitness - chromosome_2.fitness))
-
 
 def simple_linear(self: Attributes, weight: float) -> float:
     """
@@ -117,10 +114,16 @@ def simple_linear(self: Attributes, weight: float) -> float:
 
 
 @dataclass
-class Attributes:
+class AttributesData:
     """
     Attributes class which stores all attributes in a dataclass.
-    Contains default attributes for each attribute.
+    This includes type-hints/annotations and default values.
+
+    Additionally gains dataclass features, including an __init__ and __repr__ to avoid boilerplate code.
+
+    Developer Note:
+
+        Override this class to set default attributes. See help(Attributes) for more information.
     """
 
     run: int = 0
@@ -156,28 +159,28 @@ class Attributes:
     max_gene_mutation_rate: float = 0.15
     min_gene_mutation_rate: float = 0.01
 
-    fitness_function_impl = Fitness.is_it_5
-    make_population = Population
-    make_chromosome = Chromosome
-    make_gene = Gene
+    fitness_function_impl: Callable[["Attributes", Chromosome], float] = Fitness.is_it_5
+    make_gene: Callable[[Any], Gene] = Gene
+    make_chromosome: Callable[[Iterable[Any]], Chromosome] = Chromosome
+    make_population: Callable[[Iterable[Iterable[Any]]], Population] = Population
 
-    gene_impl = rand_1_to_10
-    chromosome_impl = use_genes
-    population_impl = use_chromosomes
+    gene_impl: Callable[[], Any] = rand_1_to_10
+    chromosome_impl: Callable[[], Iterable[Any]] = use_genes
+    population_impl: Callable[[], Iterable[Iterable[Any]]] = use_chromosomes
 
-    weighted_random = simple_linear
-    dist = dist_fitness
+    weighted_random: Callable[[float], float] = simple_linear
+    dist: Callable[["Attributes", Chromosome, Chromosome], None] = dist_fitness
 
-    parent_selection_impl = Parent.Rank.tournament
-    crossover_individual_impl = Crossover.Individual.single_point
-    crossover_population_impl = Crossover.Population.sequential
-    survivor_selection_impl = Survivor.fill_in_best
-    mutation_individual_impl = Mutation.Individual.individual_genes
-    mutation_population_impl = Mutation.Population.random_avoid_best
-    termination_impl = Termination.fitness_generation_tolerance
+    parent_selection_impl: Callable[["Attributes"], None] = Parent.Rank.tournament
+    crossover_individual_impl: Callable[["Attributes"], None] = Crossover.Individual.single_point
+    crossover_population_impl: Callable[["Attributes", Chromosome, Chromosome], None] = Crossover.Population.sequential
+    survivor_selection_impl: Callable[["Attributes"], None] = Survivor.fill_in_best
+    mutation_individual_impl: Callable[["Attributes", Chromosome], None] = Mutation.Individual.individual_genes
+    mutation_population_impl: Callable[["Attributes"], None] = Mutation.Population.random_avoid_best
+    termination_impl: Callable[["Attributes"], bool] = Termination.fitness_generation_tolerance
 
     database: Database = field(default_factory=sql_database.SQL_Database)
-    database_name: str = 'database.db'
+    database_name: str = "database.db"
     save_data: bool = True
     sql_create_data_structure: str = """
         CREATE TABLE IF NOT EXISTS data (
@@ -192,15 +195,60 @@ class Attributes:
     graph: Callable[[Database], Graph] = matplotlib_graph.Matplotlib_Graph
 
 
+class AsMethod:
+    """A descriptor for converting function attributes into bound methods."""
+
+    def __init__(self: AsMethod, name: str) -> None:
+        self.name = name
+
+    def __get__(self: AsMethod, obj: "AttributesProperties", cls: type) -> MethodType:
+        return vars(obj)[self.name]
+
+    def __set__(self: AsMethod, obj: "AttributesProperties", method: Callable) -> None:
+        if method is None:
+            pass
+        elif not callable(method):
+            raise TypeError(f"{self.name} must be a method i.e. callable.")
+        elif next(iter(signature(method).parameters), None) in ("self", "ga"):
+            method = MethodType(method, obj)
+        vars(obj)[self.name] = method
+
+
+class Attributes(AttributesData):
+    """
+    The Attributes class inherits default attributes from AttributesData
+    and implements methods, descriptors, and properties.
+
+    The built-in methods provide interfacing to the database.
+    >>> ga.save_population()  # references ga.database.insert_current_population(ga)
+    The descriptors are used to convert function attributes into methods.
+    >>> ga.gene_impl = lambda self: ...  # self is turned into an implicit argument.
+    The properties are used to validate certain inputs.
+
+    Developer Notes:
+
+        If inherited, the descriptors may be overridden with a method implementation,
+        but this removes the descriptor.
+
+        To override default attributes, we recommend creating a dataclass inheriting AttributesData.
+        Then inherit the Attributes and AttributesDataSubclass, in that order.
+        >>> from dataclasses import dataclass
+        >>> @dataclass
+        >>> class MyDefaults(AttributesData):
+        ...     run: int = 10
+        ... 
+        >>> class MyAttributes(Attributes, MyDefaults):
+        ...     pass
+        ... 
+    """
+
     #============================#
     # Built-in database methods: #
     #============================#
 
-
     def save_population(self: Attributes) -> None:
         """Saves the current population to the database."""
         self.database.insert_current_population(self)
-
 
     def save_chromosome(self: Attributes, chromosome: Chromosome) -> None:
         """
@@ -213,235 +261,120 @@ class Attributes:
         """
         self.database.insert_current_chromosome(self.current_generation, chromosome)
 
+    #===========================#
+    # Descriptors which convert #
+    # functions into methods:   #
+    #===========================#
 
-#=========================#
-# Properties for methods. #
-#=========================#
+    fitness_function_impl = AsMethod("fitness_function_impl")
+    parent_selection_impl = AsMethod("parent_selection_impl")
+    crossover_individual_impl = AsMethod("crossover_individual_impl")
+    crossover_population_impl = AsMethod("crossover_population_impl")
+    survivor_selection_impl = AsMethod("survivor_selection_impl")
+    mutation_individual_impl = AsMethod("mutation_individual_impl")
+    mutation_population_impl = AsMethod("mutation_population_impl")
+    termination_impl = AsMethod("termination_impl")
+    dist = AsMethod("dist")
+    weighted_random = AsMethod("weighted_random")
+    gene_impl = AsMethod("gene_impl")
+    chromosome_impl = AsMethod("chromosome_impl")
+    population_impl = AsMethod("population_impl")
 
+    #=============#
+    # Properties: #
+    #=============#
 
-def get_method(name: str) -> Callable[[Attributes], Callable[..., Any]]:
-    """
-    Creates a getter method for getting a method from the Attributes class.
+    @property
+    def run(self: AttributesProperties) -> int:
+        return vars(self)["run"]
 
-    Parameters
-    ----------
-    name : str
-        The name of the method from Attributes.
+    @run.setter
+    def run(self: AttributesProperties, value: int) -> None:
+        if not isinstance(value, int) or value < 0:
+            raise ValueError("ga.run counter must be an integer greater than or equal to 0.")
+        vars(self)["run"] = value
 
-    Returns
-    -------
-    getter(ga)(...) -> Any
-        The getter property, taking in an object and returning the method.
-    """
-    def getter(self: Attributes) -> Callable[..., Any]:
-        return getattr(self, f"_{name}")
-    return getter
+    @property
+    def current_generation(self: AttributesProperties) -> int:
+        return vars(self)["current_generation"]
 
+    @current_generation.setter
+    def current_generation(self: AttributesProperties, value: int) -> None:
+        if not isinstance(value, int) or value < 0:
+            raise ValueError("ga.current_generation must be an integer greater than or equal to 0")
+        vars(self)["current_generation"] = value
 
-def set_method(name: str) -> Callable[[Attributes, Optional[Callable[..., Any]]], None]:
-    """
-    Creates a setter method for setting a method from the Attributes class.
+    @property
+    def chromosome_length(self: AttributesProperties) -> int:
+        return vars(self)["chromosome_length"]
 
-    Parameters
-    ----------
-    name : str
-        The name of the method from Attributes.
+    @chromosome_length.setter
+    def chromosome_length(self: AttributesProperties, value: int) -> None:
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError("ga.chromosome_length must be an integer greater than and not equal to 0.")
+        vars(self)["chromosome_length"] = value
 
-    Returns
-    -------
-    setter(ga, method)
-        The setter property, taking in an object and returning nothing.
-    """
-    def setter(self: Attributes, method: Optional[Callable[..., Any]]) -> None:
-        if method is None:
-            pass
-        elif not callable(method):
-            raise TypeError(f"{name} must be a method i.e. callable.")
-        elif next(iter(signature(method).parameters), None) in ("self", "ga"):
-            method = MethodType(method, self)
-        setattr(self, f"_{name}", method)
-    return setter
+    @property
+    def population_size(self: AttributesProperties) -> int:
+        return vars(self)["population_size"]
 
+    @population_size.setter
+    def population_size(self: AttributesProperties, value: int) -> None:
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError("ga.population_size must be an integer greater than and not equal to 0.")
+        vars(self)["population_size"] = value
 
-for name in (
-    "fitness_function_impl",
-    "parent_selection_impl",
-    "crossover_individual_impl",
-    "crossover_population_impl",
-    "survivor_selection_impl",
-    "mutation_individual_impl",
-    "mutation_population_impl",
-    "termination_impl",
-    "dist",
-    "weighted_random",
-    "gene_impl",
-    "chromosome_impl",
-    "population_impl",
-):
-    # Rename to private attribute:
-    # name -> _name
-    setattr(Attributes, f"_{name}", getattr(Attributes, name))
-    # Replace name with property
-    setattr(Attributes, name, property(get_method(name), set_method(name)))
+    @property
+    def max_chromosome_mutation_rate(self: AttributesProperties) -> float:
+        # Default value.
+        if vars(self)["max_chromosome_mutation_rate"] is None:
+            return min(self.chromosome_mutation_rate * 2, (self.chromosome_mutation_rate + 1) / 2)
+        # Set value.
+        return vars(self)["max_chromosome_mutation_rate"]
 
-
-#============================#
-# Static checking properties $
-# for non-methods            #
-#============================#
-
-
-static_checks = {
-    "run": {
-        "check": lambda value: isinstance(value, int) and value >= 0,
-        "error": "ga.run counter must be an integer greater than or equal to 0.",
-    },
-    "current_generation": {
-        "check": lambda value: isinstance(value, int) and value >= 0,
-        "error": "ga.current_generation must be an integer greater than or equal to 0",
-    },
-    "chromosome_length": {
-        "check": lambda value: isinstance(value, int) and value > 0,
-        "error": "ga.chromosome_length must be an integer greater than and not equal to 0.",
-    },
-    "population_size": {
-        "check": lambda value: isinstance(value, int) and value > 0,
-        "error": "ga.population_size must be an integer greater than and not equal to 0.",
-    },
-}
-
-
-def get_attr(name: str) -> Callable[[Attributes], Any]:
-    """
-    Creates a getter method for getting an attribute from the Attributes class.
-
-    Parameters
-    ----------
-    name : str
-        The name of the attribute.
-
-    Returns
-    -------
-    getter(ga) -> Any
-        A getter method which returns an attribute.
-    """
-    def getter(self: Attributes) -> Any:
-        return getattr(self, f"_{name}")
-    return getter
-
-
-def set_attr(name: str, check: Callable[[Any], bool], error: str) -> Callable[[Attributes, Any], None]:
-    """
-    Creates a setter method for setting an attribute from the Attributes class.
-
-    Parameters
-    ----------
-    name : str
-        The name of the attribute.
-    check(Any) -> bool
-        The condition needed to be passed for the attribute to be added.
-    error: str
-        An error message if check(...) turns False.
-
-    Returns
-    -------
-    setter(ga, Any) -> None
-    Raises ValueError(error)
-        A setter method which saves to an attribute.
-    """
-    def setter(self: Attributes, value: Any) -> Any:
-        if check(value):
-            setattr(self, f"_{name}", value)
+    @max_chromosome_mutation_rate.setter
+    def max_chromosome_mutation_rate(self: AttributesProperties, value: Optional[float]) -> None:
+        # Use default or a valid float.
+        if value is None or (isinstance(value, (float, int)) and 0 <= value <= 1):
+            vars(self)["max_chromosome_mutation_rate"] = value
         else:
-            raise ValueError(error)
-    return setter
+            raise ValueError("Max chromosome mutation rate must be between 0 and 1")
 
+    @property
+    def min_chromosome_mutation_rate(self: AttributesProperties) -> float:
+        # Default value.
+        if vars(self)["min_chromosome_mutation_rate"] is None:
+            return max(self.chromosome_mutation_rate / 2, self.chromosome_mutation_rate * 2 - 1)
+        # Set value.
+        return vars(self)["min_chromosome_mutation_rate"]
 
-for name in static_checks:
-    setattr(
-        Attributes,
-        name,
-        property(
-            get_attr(name),
-            set_attr(name, static_checks[name]["check"], static_checks[name]["error"]),
-        )
-    )
+    @min_chromosome_mutation_rate.setter
+    def min_chromosome_mutation_rate(self: AttributesProperties, value: Optional[float]) -> None:
+        # Use default or a valid float.
+        if value is None or (isinstance(value, (float, int)) and 0 <= value <= 1):
+            vars(self)["min_chromosome_mutation_rate"] = value
+        else:
+            raise ValueError("Min chromosome mutation rate must be between 0 and 1")
 
+    @property
+    def database_name(self: AttributesProperties) -> str:
+        return vars(self)["database_name"]
 
-#==================#
-# Other properties #
-#==================#
+    @database_name.setter
+    def database_name(self: AttributesProperties, name: str) -> None:
+        # Update the database's name.
+        self.database._database_name = name
+        # Set the attribute for itself.
+        vars(self)["database_name"] = name
 
+    @property
+    def graph(self: AttributesProperties) -> Graph:
+        return vars(self)["graph"]
 
-def get_max_chromosome_mutation_rate(self: Attributes) -> float:
-    return self._max_chromosome_mutation_rate
+    @graph.setter
+    def graph(self: AttributesProperties, graph: Callable[[Database], Graph]) -> None:
+        vars(self)["graph"] = graph(self.database)
 
-
-def set_max_chromosome_mutation_rate(self: Attributes, value: Optional[float]) -> None:
-
-    # Default value
-    if value is None:
-        self._max_chromosome_mutation_rate = min(
-            self.chromosome_mutation_rate * 2,
-            (self.chromosome_mutation_rate + 1) / 2,
-        )
-
-    # Otherwise check value
-    elif isinstance(value, (float, int)) and 0 <= value <= 1:
-        self._max_chromosome_mutation_rate = value
-
-    # Raise error
-    else:
-        raise ValueError("Max chromosome mutation rate must be between 0 and 1")
-
-
-def get_min_chromosome_mutation_rate(self: Attributes) -> float:
-    return self._min_chromosome_mutation_rate
-
-
-def set_min_chromosome_mutation_rate(self: Attributes, value: Optional[float]) -> None:
-
-    # Default value
-    if value is None:
-        self._min_chromosome_mutation_rate = max(
-            self.chromosome_mutation_rate / 2,
-            self.chromosome_mutation_rate * 2 - 1,
-        )
-
-    # Otherwise check value
-    elif isinstance(value, (float, int)) and 0 <= value <= 1:
-        self._min_chromosome_mutation_rate = value
-
-    # Raise error
-    else:
-        raise ValueError("Min chromosome mutation rate must be between 0 and 1")
-
-
-def get_database_name(self: Attributes) -> str:
-    return self._database_name
-
-
-def set_database_name(self: Attributes, name: str) -> None:
-    # Update the database class' name
-    self.database._database_name = name
-    # Set the attribute for itself
-    self._database_name = name
-
-
-def get_graph(self: Attributes) -> Graph:
-    return self._graph
-
-
-def set_graph(self: Attributes, graph: Callable[[Database], Graph]) -> None:
-    self._graph = graph(self.database)
-
-
-def get_active(self: Attributes) -> Callable[[Attributes], None]:
-    return self.termination_impl
-
-
-Attributes.max_chromosome_mutation_rate = property(get_max_chromosome_mutation_rate, set_max_chromosome_mutation_rate)
-Attributes.min_chromosome_mutation_rate = property(get_min_chromosome_mutation_rate, set_min_chromosome_mutation_rate)
-Attributes.database_name = property(get_database_name, set_database_name)
-Attributes.graph = property(get_graph, set_graph)
-Attributes.active = property(get_active)
+    @property
+    def active(self: AttributesProperties) -> Callable[[], bool]:
+        return self.termination_impl
