@@ -214,6 +214,8 @@ class AttributesData:
                 return default_field.default_factory()
         # Extract the default values from all fields.
         defaults = {name: get_default(default_field) for name, default_field in self.__dataclass_fields__.items() if default_field.init}
+        # Hard defaults cannot be a given parameter in the __init__.
+        hard_defaults = {name: get_default(default_field) for name, default_field in self.__dataclass_fields__.items() if not default_field.init}
         # Verify not too many args are passed in.
         if len(args) > len(defaults):
             raise TypeError(f"__init__ takes {len(defaults)} positional arguments but {len(args)} were given")
@@ -226,7 +228,7 @@ class AttributesData:
         for name in kwargs.keys() - self.__dataclass_fields__.keys():
             raise TypeError(f"__init__ got an unexpected keyword argument '{name}'")
         # Merge the defaults, args, and kwargs.
-        for name, value in {**defaults, **args, **kwargs}.items():
+        for name, value in {**defaults, **args, **kwargs, **hard_defaults}.items():
             # Ignore None values if self already has that attribute.
             if value is not None or name not in dir(self):
                 setattr(self, name, value)
