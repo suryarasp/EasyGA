@@ -1,4 +1,5 @@
 import sqlite3
+from sqlite3 import Error
 
 from tabulate import tabulate
 
@@ -11,11 +12,13 @@ class SQL_Database:
         self.conn = None
         self.config_id = None
         self._database_name = 'database.db'
-        self.config_structure = f"""
-        CREATE TABLE IF NOT EXISTS config (
-        config_id INTEGER,
-        attribute_name TEXT,
-        attribute_value TEXT)"""
+        self.config_structure = """
+            CREATE TABLE IF NOT EXISTS config (
+                config_id INTEGER,
+                attribute_name TEXT,
+                attribute_value TEXT
+            ;)
+        """
 
 
     #=====================================#
@@ -23,23 +26,18 @@ class SQL_Database:
     #=====================================#
 
     def create_all_tables(self, ga):
-        """Create the database if it doenst exist and then the data and config
-        tables."""
-
-        # Create the database connection
+        """Create the database if it doenst exist and then the data and config tables."""
+        # Create the database connection.
         self.create_connection()
-
-        if self.conn is not None:
-            # Create data table
-            self.create_table(ga.sql_create_data_structure)
-            # Creare config table
-            self.create_table(self.config_structure)
-            # Set the config id
-            self.config_id = self.get_current_config()
-
-        else:
+        # No connection.
+        if self.conn is None:
             raise Exception("Error! Cannot create the database connection.")
-
+        # Create data table.
+        self.create_table(ga.sql_create_data_structure)
+        # Creare config table.
+        self.create_table(self.config_structure)
+        # Set the config id.
+        self.config_id = self.get_current_config()
 
 
     def insert_config(self, ga):
@@ -48,7 +46,7 @@ class SQL_Database:
 
         Notes:
 
-            "Attributes" here refers to ga.__annotations__.keys(),
+            "Attributes" here refers to ga.__dataclass_fields__.keys(),
             which allows the attributes to be customized.
 
             Only attributes that are bool, float, int, or str will be used.
@@ -58,60 +56,25 @@ class SQL_Database:
         self.config_id = self.get_current_config()
 
         # Setting the config_id index if there is no file
-        if self.config_id == None:
+        if self.config_id is None:
             self.config_id = 0
         else:
             self.config_id = self.config_id + 1
 
-        # Getting all the attributes from the attributes class
+        # Getting all attribute fields from the attributes class
         db_config = [
             (self.config_id, attr_name, attr_value)
             for attr_name
-            in ga.__annotations__
+            in ga.__dataclass_fields__
             if isinstance((attr_value := getattr(ga, attr_name)), (bool, float, int, str))
         ]
 
-        query = f"""
+        query = """
             INSERT INTO config(config_id, attribute_name, attribute_value)
             VALUES (?, ?, ?);
         """
         self.conn.executemany(query, db_config)
         self.config_id = self.get_current_config()
-
-
-    #=====================================#
-    # Decorators:                         #
-    #=====================================#
-
-    def default_config_id(method):
-        """Decorator used to set the default config_id inside other functions."""
-
-        def new_method(self, config_id = None):
-
-            input_id = self.config_id if config_id is None else config_id
-
-            return method(self, input_id)
-
-        return new_method
-
-
-    def format_query_data(method):
-        """Decorator used to format query data"""
-
-        def new_method(self, config_id):
-            query = method(self, config_id)
-
-            # Unpack elements if they are lists with only 1 element
-            if type(query[0]) in (list, tuple) and len(query[0]) == 1:
-                query = [i[0] for i in query]
-
-            # Unpack list if it is a list with only 1 element
-            if type(query) in (list, tuple) and len(query) == 1:
-                query = query[0]
-
-            return query
-
-        return new_method
 
     #=====================================#
     # Request information Queries:        #
@@ -125,79 +88,91 @@ class SQL_Database:
     def past_runs(self):
         """Show a summerization of the past runs that the user has done."""
 
-        query_data = self.query_all(f"""
-        SELECT config_id,attribute_name,attribute_value
-        FROM config;""")
+        query_data = self.query_all("""
+            SELECT config_id, attribute_name, attribute_value
+            FROM config;
+        """)
 
-        print(
-            tabulate(
-                query_data,
-                headers = [
-                    'config_id',
-                    'attribute_name',
-                    'attribute_value'
-                ]
-            )
+        table = tabulate(
+            query_data,
+            headers = [
+                'config_id',
+                'attribute_name',
+                'attribute_value',
+            ]
         )
 
+        print(table)
+        return table
 
-    @default_config_id
+
     def get_generation_total_fitness(self, config_id):
         """Get each generations total fitness sum from the database """
 
+        config_id = self.config_id if config_id is None else config_id
+
         return self.query_all(f"""
-         SELECT SUM(fitness)
-         FROM data
-         WHERE config_id={config_id}
-         GROUP BY generation;""")
+            SELECT SUM(fitness)
+            FROM data
+            WHERE config_id={config_id}
+            GROUP BY generation;
+        """)
 
 
-    @default_config_id
     def get_total_generations(self, config_id):
         """Get the total generations from the database"""
 
+        config_id = self.config_id if config_id is None else config_id
+
         return self.query_one_item(f"""
-        SELECT COUNT(DISTINCT generation)
-        FROM data
-        WHERE config_id={config_id};""")
+            SELECT COUNT(DISTINCT generation)
+            FROM data
+            WHERE config_id={config_id};
+        """)
 
 
-    @default_config_id
     def get_highest_chromosome(self, config_id):
         """Get the highest fitness of each generation"""
 
+        config_id = self.config_id if config_id is None else config_id
+
         return self.query_all(f"""
-        SELECT max(fitness)
-        FROM data
-        WHERE config_id={config_id}
-        GROUP by generation;""")
+            SELECT max(fitness)
+            FROM data
+            WHERE config_id={config_id}
+            GROUP by generation;
+        """)
 
 
-    @default_config_id
     def get_lowest_chromosome(self, config_id):
         """Get the lowest fitness of each generation"""
 
+        config_id = self.config_id if config_id is None else config_id
+
         return self.query_all(f"""
-        SELECT min(fitness)
-        FROM data
-        WHERE config_id={config_id}
-        GROUP by generation;""")
+            SELECT min(fitness)
+            FROM data
+            WHERE config_id={config_id}
+            GROUP by generation;
+        """)
 
 
     def get_all_config_id(self):
         """Get an array of all the DISTINCT config_id in the database"""
 
         return self.query_all(f"""
-        SELECT DISTINCT config_id
-        FROM config;""")
+            SELECT DISTINCT config_id
+            FROM config;
+        """)
 
     def get_each_generation_number(self, config_id):
         """Get an array of all the generation numbers"""
 
         return self.query_all(f"""
-        SELECT DISTINCT generation
-        FROM data
-        WHERE config_id={config_id};""")
+            SELECT DISTINCT generation
+            FROM data
+            WHERE config_id={config_id};
+        """)
 
 
 
@@ -214,12 +189,14 @@ class SQL_Database:
             self.config_id,
             generation,
             chromosome.fitness,
-            repr(chromosome)
+            repr(chromosome),
         )
 
         # Create sql query structure
-        sql = """INSERT INTO data(config_id, generation, fitness, chromosome)
-                 VALUES(?,?,?,?)"""
+        sql = """
+            INSERT INTO data(config_id, generation, fitness, chromosome)
+            VALUES(?, ?, ?, ?)
+        """
 
         cur = self.conn.cursor()
         cur.execute(sql, db_chromosome)
@@ -243,8 +220,10 @@ class SQL_Database:
         ]
 
         # Create sql query structure
-        sql = """INSERT INTO data(config_id, generation, fitness, chromosome)
-                 VALUES(?,?,?,?)"""
+        sql = """
+            INSERT INTO data(config_id, generation, fitness, chromosome)
+            VALUES(?,?,?,?)
+        """
 
         cur = self.conn.cursor()
         cur.executemany(sql, db_chromosome_list)
@@ -257,14 +236,14 @@ class SQL_Database:
     #=====================================#
 
     def create_connection(self):
-        """Create a database connection to the SQLite database
-         specified by db_file."""
+        """Create a database connection to the SQLite database specified by db_file."""
 
         try:
             self.conn = sqlite3.connect(self.database_name)
         except Error as e:
             self.conn = None
             print(e)
+
 
     def create_table(self, create_table_sql):
         """Create a table from the create_table_sql statement."""
@@ -276,22 +255,31 @@ class SQL_Database:
             print(e)
 
 
-    @format_query_data
+    def format_query_data(self, data):
+        """Used to format query data."""
+        # Unpack elements if they are lists with only 1 element
+        if isinstance(data[0], (list, tuple)) and len(data[0]) == 1:
+            data = [i[0] for i in data]
+        # Unpack list if it is a list with only 1 element
+        if isinstance(data, (list, tuple)) and len(data) == 1:
+            data = data[0]
+        return data
+
+
     def query_all(self, query):
         """Query for muliple rows of data"""
 
         cur = self.conn.cursor()
         cur.execute(query)
-        return cur.fetchall()
+        return self.format_query_data(cur.fetchall())
 
 
-    @format_query_data
     def query_one_item(self, query):
         """Query for single data point"""
 
         cur = self.conn.cursor()
         cur.execute(query)
-        return cur.fetchone()
+        return self.format_query_data(cur.fetchone())
 
 
     def remove_database(self):
@@ -330,7 +318,7 @@ class SQL_Database:
 
         # If the connection doesnt exist then print error
         except:
-            raise Exception("""You are required to run a ga before you can connect to the database. Run ga.evolve() or ga.active()""")
+            raise Exception("You are required to run a ga before you can connect to the database. Run ga.evolve() or ga.active()")
 
 
     @conn.setter
@@ -357,7 +345,7 @@ class SQL_Database:
 
       # If the config_id doesnt exist then print error
       except:
-          raise Exception("""You are required to run a ga before you can connect to the database. Run ga.evolve() or ga.active()""")
+          raise Exception("You are required to run a ga before you can connect to the database. Run ga.evolve() or ga.active()")
 
 
     @config_id.setter
