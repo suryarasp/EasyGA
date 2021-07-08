@@ -121,11 +121,13 @@ class AttributesData:
 
     Additionally gains dataclass features, including an __init__ and __repr__ to avoid boilerplate code.
 
-    Developer Note:
+    Developer Notes:
 
         See the Attributes class for default methods.
 
         Override this class to set default attributes. See help(Attributes) for more information.
+
+        If you must override the __post_init__, don't forget to use super().__post_init__().
     """
 
     run: int = 0
@@ -201,40 +203,11 @@ class AttributesData:
 
     graph: Callable[[Database], Graph] = matplotlib_graph.Matplotlib_Graph
 
-    def __init__(self: AttributesData, *args: Any, **kwargs: Any) -> None:
-        """
-        Generated AttributesData.__init__, accepts dataclass fields as parameters.
-        Ignores parameters whose values are None if something is already set.
-        """
-        # Extract the default value from a dataclass field.
-        def get_default(default_field):
-            if type(default_field.default) is not _MISSING_TYPE:
-                return default_field.default
-            else:
-                return default_field.default_factory()
-        # Extract the default values from all fields.
-        defaults = {name: get_default(default_field) for name, default_field in self.__dataclass_fields__.items() if default_field.init}
-        # Hard defaults cannot be a given parameter in the __init__.
-        hard_defaults = {name: get_default(default_field) for name, default_field in self.__dataclass_fields__.items() if not default_field.init}
-        # Verify not too many args are passed in.
-        if len(args) > len(defaults):
-            raise TypeError(f"__init__ takes {len(defaults)} positional arguments but {len(args)} were given")
-        # Convert the args to kwargs.
-        args = dict(zip(defaults, args))
-        # Verify a parameter is not in both the args and kwargs.
-        for name in args.keys() & kwargs.keys():
-            raise TypeError(f"__init__() got multiple values for '{name}'")
-        # Verify all kwargs are in the fields.
-        for name in kwargs.keys() - self.__dataclass_fields__.keys():
-            raise TypeError(f"__init__ got an unexpected keyword argument '{name}'")
-        # Merge the defaults, args, and kwargs.
-        for name, value in {**defaults, **args, **kwargs, **hard_defaults}.items():
-            # Ignore None values if self already has that attribute.
-            if value is not None or name not in dir(self):
-                setattr(self, name, value)
-        # Run the __post_init__.
-        if hasattr(self, "__post_init__"):
-            self.__post_init__()
+    def __post_init__(self: AttributesData) -> None:
+        """Undo any instance attributes that are None when they should be methods from the class."""
+        for name in self.__dataclass_fields__:
+            if getattr(self, name) is None and isinstance(getattr(type(self), name), AsMethod):
+                delattr(self, name)
 
 
 class AsMethod:
@@ -251,7 +224,7 @@ class AsMethod:
         self.name = name
         self.default = default
 
-    def __get__(self: AsMethod, obj: "AttributesProperties", cls: type) -> Callable:
+    def __get__(self: AsMethod, obj: "Attributes", cls: type) -> Callable:
         # Already has the attribute on the object.
         if self.name in vars(obj):
             return vars(obj)[self.name]
@@ -261,7 +234,7 @@ class AsMethod:
         # Otherwise use the default as a function.
         return self.default
 
-    def __set__(self: AsMethod, obj: "AttributesProperties", method: Optional[Callable]) -> None:
+    def __set__(self: AsMethod, obj: "Attributes", method: Optional[Callable]) -> None:
         if method is None:
             return
         elif not callable(method):
@@ -269,6 +242,9 @@ class AsMethod:
         elif next(iter(signature(method).parameters), None) in ("self", "ga"):
             method = MethodType(method, obj)
         vars(obj)[self.name] = method
+
+    def __delete__(self: AsMethod, obj: "Attributes") -> None:
+        del vars(obj)[self.name]
 
 
 class Attributes(AttributesData):
