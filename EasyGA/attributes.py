@@ -2,7 +2,7 @@ from __future__ import annotations
 from inspect import signature
 from typing import Any, Callable, Dict, Iterable, Iterator, Optional
 from math import sqrt, ceil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, _MISSING_TYPE
 from types import MethodType
 import random
 
@@ -117,11 +117,13 @@ def simple_linear(self: Attributes, weight: float) -> float:
 class AttributesData:
     """
     Attributes class which stores all attributes in a dataclass.
-    This includes type-hints/annotations and default values.
+    This includes type-hints/annotations and default values, except for methods.
 
     Additionally gains dataclass features, including an __init__ and __repr__ to avoid boilerplate code.
 
     Developer Note:
+
+        See the Attributes class for default methods.
 
         Override this class to set default attributes. See help(Attributes) for more information.
     """
@@ -159,25 +161,30 @@ class AttributesData:
     max_gene_mutation_rate: float = 0.15
     min_gene_mutation_rate: float = 0.01
 
-    fitness_function_impl: Callable[["Attributes", Chromosome], float] = Fitness.is_it_5
-    make_gene: Callable[[Any], Gene] = Gene
-    make_chromosome: Callable[[Iterable[Any]], Chromosome] = Chromosome
-    make_population: Callable[[Iterable[Iterable[Any]]], Population] = Population
+    #=================================#
+    # Default methods are implemented #
+    # in the Attributes descriptors:  #
+    #=================================#
 
-    gene_impl: Callable[[], Any] = rand_1_to_10
-    chromosome_impl: Callable[[], Iterable[Any]] = use_genes
-    population_impl: Callable[[], Iterable[Iterable[Any]]] = use_chromosomes
+    fitness_function_impl: Callable[["Attributes", Chromosome], float] = None
+    make_gene: Callable[[Any], Gene] = None
+    make_chromosome: Callable[[Iterable[Any]], Chromosome] = None
+    make_population: Callable[[Iterable[Iterable[Any]]], Population] = None
 
-    weighted_random: Callable[[float], float] = simple_linear
-    dist: Callable[["Attributes", Chromosome, Chromosome], None] = dist_fitness
+    gene_impl: Callable[[], Any] = None
+    chromosome_impl: Callable[[], Iterable[Any]] = None
+    population_impl: Callable[[], Iterable[Iterable[Any]]] = None
 
-    parent_selection_impl: Callable[["Attributes"], None] = Parent.Rank.tournament
-    crossover_individual_impl: Callable[["Attributes"], None] = Crossover.Individual.single_point
-    crossover_population_impl: Callable[["Attributes", Chromosome, Chromosome], None] = Crossover.Population.sequential
-    survivor_selection_impl: Callable[["Attributes"], None] = Survivor.fill_in_best
-    mutation_individual_impl: Callable[["Attributes", Chromosome], None] = Mutation.Individual.individual_genes
-    mutation_population_impl: Callable[["Attributes"], None] = Mutation.Population.random_avoid_best
-    termination_impl: Callable[["Attributes"], bool] = Termination.fitness_generation_tolerance
+    weighted_random: Callable[[float], float] = None
+    dist: Callable[["Attributes", Chromosome, Chromosome], None] = None
+
+    parent_selection_impl: Callable[["Attributes"], None] = None
+    crossover_individual_impl: Callable[["Attributes"], None] = None
+    crossover_population_impl: Callable[["Attributes", Chromosome, Chromosome], None] = None
+    survivor_selection_impl: Callable[["Attributes"], None] = None
+    mutation_individual_impl: Callable[["Attributes", Chromosome], None] = None
+    mutation_population_impl: Callable[["Attributes"], None] = None
+    termination_impl: Callable[["Attributes"], bool] = None
 
     database: Database = field(default_factory=sql_database.SQL_Database)
     database_name: str = "database.db"
@@ -194,19 +201,69 @@ class AttributesData:
 
     graph: Callable[[Database], Graph] = matplotlib_graph.Matplotlib_Graph
 
+    def __init__(self: AttributesData, *args: Any, **kwargs: Any) -> None:
+        """
+        Generated AttributesData.__init__, accepts dataclass fields as parameters.
+        Ignores parameters whose values are None if something is already set.
+        """
+        # Extract the default value from a dataclass field.
+        def get_default(default_field):
+            if type(default_field.default) is not _MISSING_TYPE:
+                return default_field.default
+            else:
+                return default_field.default_factory()
+        # Extract the default values from all fields.
+        defaults = {name: get_default(default_field) for name, default_field in self.__dataclass_fields__.items() if default_field.init}
+        # Verify not too many args are passed in.
+        if len(args) > len(defaults):
+            raise TypeError(f"__init__ takes {len(defaults)} positional arguments but {len(args)} were given")
+        # Convert the args to kwargs.
+        args = dict(zip(defaults, args))
+        # Verify a parameter is not in both the args and kwargs.
+        for name in args.keys() & kwargs.keys():
+            raise TypeError(f"__init__() got multiple values for '{name}'")
+        # Verify all kwargs are in the fields.
+        for name in kwargs.keys() - self.__dataclass_fields__.keys():
+            raise TypeError(f"__init__ got an unexpected keyword argument '{name}'")
+        # Merge the defaults, args, and kwargs.
+        for name, value in {**defaults, **args, **kwargs}.items():
+            # Ignore None values if self already has that attribute.
+            if value is not None or name not in dir(self):
+                setattr(self, name, value)
+        # Run the __post_init__.
+        if hasattr(self, "__post_init__"):
+            self.__post_init__()
+
 
 class AsMethod:
-    """A descriptor for converting function attributes into bound methods."""
+    """
+    A descriptor for converting function attributes into bound methods.
 
-    def __init__(self: AsMethod, name: str) -> None:
+    To support both inheritance and dataclasses, if the method is None,
+    then nothing is set.
+    """
+
+    def __init__(self: AsMethod, name: str, default: Callable) -> None:
+        if not callable(default):
+            raise TypeError(f"'default' must be a method i.e. callable.")
         self.name = name
+        self.default = default
 
-    def __get__(self: AsMethod, obj: "AttributesProperties", cls: type) -> MethodType:
-        return vars(obj)[self.name]
+    def __get__(self: AsMethod, obj: "AttributesProperties", cls: type) -> Callable:
+        # Already has the attribute on the object.
+        if self.name in vars(obj):
+            return vars(obj)[self.name]
+        # Otherwise use the default as a method.
+        if next(iter(signature(self.default).parameters), None) in ("self", "ga"):
+            return MethodType(self.default, obj)
+        # Otherwise use the default as a function.
+        return self.default
 
-    def __set__(self: AsMethod, obj: "AttributesProperties", method: Callable) -> None:
-        if not callable(method):
-            raise TypeError(f"{self.name} must be a method i.e. callable.")
+    def __set__(self: AsMethod, obj: "AttributesProperties", method: Optional[Callable]) -> None:
+        if method is None:
+            return
+        elif not callable(method):
+            raise TypeError(f"'{self.name}' must be a method i.e. callable.")
         elif next(iter(signature(method).parameters), None) in ("self", "ga"):
             method = MethodType(method, obj)
         vars(obj)[self.name] = method
@@ -264,19 +321,22 @@ class Attributes(AttributesData):
     # functions into methods:   #
     #===========================#
 
-    fitness_function_impl = AsMethod("fitness_function_impl")
-    parent_selection_impl = AsMethod("parent_selection_impl")
-    crossover_individual_impl = AsMethod("crossover_individual_impl")
-    crossover_population_impl = AsMethod("crossover_population_impl")
-    survivor_selection_impl = AsMethod("survivor_selection_impl")
-    mutation_individual_impl = AsMethod("mutation_individual_impl")
-    mutation_population_impl = AsMethod("mutation_population_impl")
-    termination_impl = AsMethod("termination_impl")
-    dist = AsMethod("dist")
-    weighted_random = AsMethod("weighted_random")
-    gene_impl = AsMethod("gene_impl")
-    chromosome_impl = AsMethod("chromosome_impl")
-    population_impl = AsMethod("population_impl")
+    fitness_function_impl = AsMethod("fitness_function_impl", Fitness.is_it_5)
+    make_gene = AsMethod("make_gene", Gene)
+    make_chromosome = AsMethod("make_chromosome", Chromosome)
+    make_population = AsMethod("make_population", Population)
+    gene_impl = AsMethod("gene_impl", rand_1_to_10)
+    chromosome_impl = AsMethod("chromosome_impl", use_genes)
+    population_impl = AsMethod("population_impl", use_chromosomes)
+    dist = AsMethod("dist", dist_fitness)
+    weighted_random = AsMethod("weighted_random", simple_linear)
+    parent_selection_impl = AsMethod("parent_selection_impl", Parent.Rank.tournament)
+    crossover_individual_impl = AsMethod("crossover_individual_impl", Crossover.Individual.single_point)
+    crossover_population_impl = AsMethod("crossover_population_impl", Crossover.Population.sequential)
+    survivor_selection_impl = AsMethod("survivor_selection_impl", Survivor.fill_in_best)
+    mutation_individual_impl = AsMethod("mutation_individual_impl", Mutation.Individual.individual_genes)
+    mutation_population_impl = AsMethod("mutation_population_impl", Mutation.Population.random_avoid_best)
+    termination_impl = AsMethod("termination_impl", Termination.fitness_generation_tolerance)
 
     #=============#
     # Properties: #
@@ -325,7 +385,7 @@ class Attributes(AttributesData):
     @property
     def max_chromosome_mutation_rate(self: AttributesProperties) -> float:
         # Default value.
-        if vars(self)["max_chromosome_mutation_rate"] is None:
+        if vars(self).get("max_chromosome_mutation_rate", None) is None:
             return min(self.chromosome_mutation_rate * 2, (self.chromosome_mutation_rate + 1) / 2)
         # Set value.
         return vars(self)["max_chromosome_mutation_rate"]
@@ -341,7 +401,7 @@ class Attributes(AttributesData):
     @property
     def min_chromosome_mutation_rate(self: AttributesProperties) -> float:
         # Default value.
-        if vars(self)["min_chromosome_mutation_rate"] is None:
+        if vars(self).get("min_chromosome_mutation_rate", None) is None:
             return max(self.chromosome_mutation_rate / 2, self.chromosome_mutation_rate * 2 - 1)
         # Set value.
         return vars(self)["min_chromosome_mutation_rate"]
