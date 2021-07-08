@@ -1,5 +1,5 @@
 from __future__ import annotations
-from inspect import signature
+from inspect import getmro, signature
 from typing import Any, Callable, Dict, Iterable, Iterator, Optional
 from math import sqrt, ceil
 from dataclasses import dataclass, field, _MISSING_TYPE
@@ -204,9 +204,29 @@ class AttributesData:
     graph: Callable[[Database], Graph] = matplotlib_graph.Matplotlib_Graph
 
     def __post_init__(self: AttributesData) -> None:
-        """Undo any instance attributes that are None when they should be methods from the class."""
+        """
+        Undo any instance attributes that are None when they should be methods from the class.
+
+        Attributes here refers to the __dataclass_fields__.
+
+        Methods here refers to AsMethod descriptors on any of the super classes of self's class.
+        """
+        def is_method(cls: type, name: str) -> bool:
+            """
+            The class has the attribute `name` as a method if:
+            - it has the attribute,
+            - and it's the AsMethod descriptor.
+            """
+            return hasattr(cls, name) and isinstance(getattr(cls, name), AsMethod)
+        # Check each dataclass attribute.
         for name in self.__dataclass_fields__:
-            if getattr(self, name) is None and isinstance(getattr(type(self), name), AsMethod):
+            # If the instance attribute is None
+            # and any of the super classes has that as a method,
+            # then delete the None instance attribute.
+            if (
+                getattr(self, name) is None
+                and any(is_method(cls, name) for cls in getmro(type(self)))
+            ):
                 delattr(self, name)
 
 
