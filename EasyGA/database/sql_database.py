@@ -1,11 +1,11 @@
 import sqlite3
-from typing import get_type_hints
+
 from tabulate import tabulate
+
 
 class SQL_Database:
     """Main database class that controls all the functionality for input /
     out of the database using SQLite3."""
-
 
     def __init__(self):
         self.conn = None
@@ -311,7 +311,7 @@ class SQL_Database:
 
     @database_name.setter
     def database_name(self, value_input):
-        raise Exception("Invalid usage, please use ga.database_name instead.")
+        raise AttributeError("Invalid usage, please use ga.database_name instead.")
 
 
     @property
