@@ -19,8 +19,7 @@ from parent import Parent
 from survivor import Survivor
 from crossover import Crossover
 from mutation import Mutation
-from database import sql_database, matplotlib_graph
-from database import sql_database as Database, matplotlib_graph as Graph
+from database import SQLDatabase, MatplotlibGraph, SQLDatabase as Database, MatplotlibGraph as Graph
 
 #========================================#
 # Default methods not defined elsewhere. #
@@ -188,7 +187,7 @@ class AttributesData:
     mutation_population_impl: Callable[["Attributes"], None] = None
     termination_impl: Callable[["Attributes"], bool] = None
 
-    database: Database = field(default_factory=sql_database.SQL_Database)
+    database: Database = field(default_factory=SQLDatabase)
     database_name: str = "database.db"
     save_data: bool = True
     sql_create_data_structure: str = """
@@ -201,7 +200,7 @@ class AttributesData:
         );
     """
 
-    graph: Callable[[Database], Graph] = matplotlib_graph.Matplotlib_Graph
+    graph: Callable[[Database], Graph] = MatplotlibGraph
 
     def __post_init__(self: AttributesData) -> None:
         """
