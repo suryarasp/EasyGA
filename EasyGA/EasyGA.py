@@ -28,11 +28,11 @@ from mutation  import Mutation
 from attributes import Attributes
 
 # Database class
-from database import sql_database
+from database import SQLDatabase
 from sqlite3  import Error
 
 # Graphing package
-from database import matplotlib_graph
+from database import MatplotlibGraph
 import matplotlib.pyplot as plt
 
 
