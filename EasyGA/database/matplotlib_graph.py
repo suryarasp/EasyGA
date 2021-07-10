@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-class Matplotlib_Graph:
+class MatplotlibGraph:
     """Prebuilt graphing functions to make visual
     represention of fitness data."""
 

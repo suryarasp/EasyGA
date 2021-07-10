@@ -4,7 +4,7 @@ from sqlite3 import Error
 from tabulate import tabulate
 
 
-class SQL_Database:
+class SQLDatabase:
     """Main database class that controls all the functionality for input /
     out of the database using SQLite3."""
 
