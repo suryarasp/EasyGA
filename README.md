@@ -15,6 +15,7 @@ pip3 install EasyGA
 ```
 
 ## Getting started with EasyGA(Basic Example):
+The goal of the basic example is to get all 5's in the chromosome.
 ```Python
 import EasyGA
 
